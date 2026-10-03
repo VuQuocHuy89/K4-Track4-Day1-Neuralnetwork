@@ -104,7 +104,28 @@ Eval macro-F1 tăng 0,0386 so với baseline. Trên validation, cấu hình cu�
 | 5 | 3.473 | 0,8617 | 0,8431 | 0,8523 |
 | 6 | 4.102 | 0,9498 | 0,9456 | 0,9477 |
 
-Lớp 3 có F1 thấp nhất (0,8259) và ít mẫu nhất (549); 77 mẫu lớp 3 bị dự đoán thành lớp 2. Lớp 4 có F1 thấp tiếp theo (0,8384), thường bị dự đoán thành lớp 1 (293 mẫu). Ma trận nhầm lẫn cho thấy những nhầm lẫn này tập trung ở các lớp ít mẫu; dữ liệu hiện tại chưa đủ để xác định đặc trưng nào gây ra sự chồng lấn.
+Lớp 3 có F1 thấp nhất (0,8259) và ít mẫu nhất (549); trong 103 lỗi của lớp này, 77 mẫu bị dự đoán thành lớp 2 và 26 mẫu thành lớp 5. Đối chiếu đặc trưng gốc trên eval cho thấy nhóm lớp 3 bị nhầm sang lớp 2 (77 mẫu) có tỷ lệ `Soil_Type_9` là 26,0%, gần với nhóm lớp 2 dự đoán đúng (30,8%) hơn nhóm lớp 3 dự đoán đúng (4,0%). Tỷ lệ `Soil_Type_2` tương ứng là 7,8%, 6,8% và 40,1%; `Hillshade_3pm` trung bình lần lượt là 135,5, 140,3 và 109,7. Các đặc trưng này cho thấy một phần mẫu lớp 3 bị nhầm có hồ sơ gần lớp 2 hơn ở một số chiều, dù đây là mô tả của các mẫu đã nhầm và không chứng minh quan hệ nhân quả. Lớp 4 có F1 thấp tiếp theo (0,8384), thường bị dự đoán thành lớp 1 (293/358 lỗi). Đây là phân tích hậu nghiệm để giải thích lỗi, không dùng để chọn hoặc thay đổi cấu hình.
+
+Ma trận nhầm lẫn trên eval (hàng là lớp thật, cột là lớp dự đoán):
+
+| Thật \ Dự đoán | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 39.280 | 2.864 | 1 | 0 | 33 | 7 | 183 |
+| 1 | 2.311 | 53.922 | 113 | 0 | 184 | 109 | 22 |
+| 2 | 3 | 131 | 6.629 | 61 | 13 | 314 | 0 |
+| 3 | 0 | 0 | 77 | 446 | 0 | 26 | 0 |
+| 4 | 29 | 293 | 22 | 0 | 1.541 | 14 | 0 |
+| 5 | 6 | 131 | 379 | 24 | 5 | 2.928 | 0 |
+| 6 | 188 | 34 | 0 | 0 | 1 | 0 | 3.879 |
+
+So sánh đặc trưng của các mẫu lớp 3 bị nhầm sang lớp 2 với hai nhóm dự đoán đúng:
+
+| Đặc trưng | Lớp 3 → 2 (n=77) | Lớp 3 đúng (n=446) | Lớp 2 đúng (n=6.629) |
+|---|---:|---:|---:|
+| `Hillshade_3pm` trung bình | 135,5 | 109,7 | 140,3 |
+| `Slope` trung bình | 16,4 | 19,0 | 21,1 |
+| `Soil_Type_9` có giá trị 1 | 26,0% | 4,0% | 30,8% |
+| `Soil_Type_2` có giá trị 1 | 7,8% | 40,1% | 6,8% |
 
 ## 5. Trả lời các câu hỏi dẫn dắt
 
