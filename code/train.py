@@ -1,13 +1,17 @@
-"""train.py — PSEUDO-CODE. Bạn phải tự hoàn thiện mọi hàm có `raise NotImplementedError`.
+"""Đánh giá, huấn luyện thí nghiệm, dự đoán và ghi file nộp.
 
 Gồm: đặt seed, đánh giá, vòng huấn luyện `run_experiment(cfg, data)`, dự đoán và ghi file nộp.
-Mọi thí nghiệm chỉ là *đổi dict cfg* rồi gọi lại run_experiment (xem GUIDE, Part 2).
+Mỗi thí nghiệm được biểu diễn bằng một dict cấu hình truyền vào `run_experiment`.
 
 Mọi chỉ số (loss, accuracy, macro-F1) dùng cùng định nghĩa với scripts/evaluate.py.
 """
 from __future__ import annotations
 
+import csv
+import math
+import random
 import time
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -15,26 +19,36 @@ import torch.nn.functional as F
 
 from data import iterate_batches
 from model import MLP, EXPECTED_PARAMS, count_params
-from optimizer import build_optimizer, clip_gradients
+from optimizer import build_optimizer, build_scheduler, clip_gradients
 
-# Cấu hình mặc định = BASELINE (M-base). `lr` do bạn tự chọn bằng val rồi điền vào.
+# Cấu hình mặc định của baseline M-base; learning rate được chọn bằng validation trong notebook.
 DEFAULT_CFG = dict(
     exp_id="base-s1", group="baseline", description="Baseline M-base",
     loss="ce",                 # "ce" | "mse"
     optimizer="sgd_momentum",  # "sgd" | "sgd_momentum" | "adam" | "adamw"
-    lr=None,                   # TODO: chọn bằng val, không dùng eval
+    lr=None,                   # notebook chọn learning rate bằng validation
     weight_decay=0.0, momentum=0.9,
     batch=512, epochs=20,
     hidden=(256, 128), dropout=0.0, init="he",
     clip_norm=None,            # None = không clip; hoặc số, ví dụ 1.0
     precision="fp32",          # "fp32" | "fp16" | "bf16"
     seed=1,
+    betas=(0.9, 0.999),
+    eps=1e-8,
+    scheduler=None,
 )
 
 
 def set_seed(seed: int) -> None:
     """Đặt seed cho random, numpy, torch (và torch.cuda nếu có)."""
-    raise NotImplementedError  # TODO
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    if hasattr(torch.backends, "cudnn"):
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
 
 
 def macro_f1_from_confusion(cm: np.ndarray) -> float:
@@ -42,37 +56,91 @@ def macro_f1_from_confusion(cm: np.ndarray) -> float:
 
     cm: ma trận nhầm lẫn (7, 7), hàng = nhãn thật, cột = dự đoán.
     """
-    raise NotImplementedError  # TODO
+    cm = np.asarray(cm, dtype=np.float64)
+    if cm.ndim != 2 or cm.shape[0] != cm.shape[1]:
+        raise ValueError("cm phải là ma trận vuông.")
+    true_positive = np.diag(cm)
+    predicted = cm.sum(axis=0)
+    actual = cm.sum(axis=1)
+    precision = np.divide(
+        true_positive,
+        predicted,
+        out=np.zeros_like(true_positive),
+        where=predicted > 0,
+    )
+    recall = np.divide(
+        true_positive,
+        actual,
+        out=np.zeros_like(true_positive),
+        where=actual > 0,
+    )
+    f1 = np.divide(
+        2.0 * precision * recall,
+        precision + recall,
+        out=np.zeros_like(true_positive),
+        where=(precision + recall) > 0,
+    )
+    return float(f1.mean())
 
 
 @torch.no_grad()
 def predict(model, X, batch_size: int = 8192) -> torch.Tensor:
-    """Trả về nhãn dự đoán int64 (N,) = argmax của logits.
-
-    Các bước: model.eval(); duyệt X theo từng lô (không cần xáo); gom argmax(dim=1); torch.cat.
-    """
-    raise NotImplementedError  # TODO
+    """Trả về nhãn int64 (N,) bằng argmax của logits theo từng lô."""
+    if batch_size <= 0:
+        raise ValueError("batch_size phải lớn hơn 0.")
+    model.eval()
+    predictions = []
+    for start in range(0, len(X), batch_size):
+        logits = model(X[start : start + batch_size])
+        predictions.append(logits.argmax(dim=1))
+    if not predictions:
+        return torch.empty(0, dtype=torch.int64, device=X.device)
+    return torch.cat(predictions, dim=0).to(dtype=torch.int64)
 
 
 @torch.no_grad()
 def evaluate(model, X, y, loss_name: str = "ce", batch_size: int = 8192) -> dict:
-    """Trả về dict(loss, acc, macro_f1) ở chế độ eval() (dropout tắt) và no_grad.
+    """Tính loss, accuracy, macro-F1 và ma trận nhầm lẫn ở chế độ eval."""
+    if batch_size <= 0:
+        raise ValueError("batch_size phải lớn hơn 0.")
+    model.eval()
+    n_samples = len(X)
+    if n_samples == 0:
+        raise ValueError("Không thể đánh giá tập rỗng.")
 
-    Các bước:
-      1. model.eval()
-      2. tính logits theo từng lô; cộng dồn tổng loss (reduction="sum") rồi chia N cuối cùng
-      3. pred = argmax; acc = (pred == y).mean()
-      4. dựng ma trận nhầm lẫn 7x7 -> macro_f1_from_confusion
-    Dùng hàm này cho: train loss (trên toàn bộ hoặc một tập con CỐ ĐỊNH của train), val, và eval cuối cùng.
-    """
-    raise NotImplementedError  # TODO
+    total_loss = 0.0
+    confusion = torch.zeros((7, 7), dtype=torch.int64, device=X.device)
+    for start in range(0, n_samples, batch_size):
+        stop = min(start + batch_size, n_samples)
+        logits = model(X[start:stop])
+        labels = y[start:stop].to(dtype=torch.int64)
+        loss = compute_loss(logits, labels, loss_name)
+        total_loss += float(loss.item()) * (stop - start)
+        predictions = logits.argmax(dim=1)
+        flat_indices = labels * 7 + predictions
+        confusion += torch.bincount(flat_indices, minlength=49).reshape(7, 7)
+
+    count = confusion.sum().item()
+    accuracy = float(torch.diagonal(confusion).sum().item() / count)
+    macro_f1 = macro_f1_from_confusion(confusion.cpu().numpy())
+    return {
+        "loss": total_loss / n_samples,
+        "acc": accuracy,
+        "macro_f1": macro_f1,
+        "confusion_matrix": confusion.cpu().numpy(),
+    }
 
 
 def compute_loss(logits, y, loss_name: str):
-    """"ce"  : cross-entropy nhận logit thô và nhãn int64 (F.cross_entropy).
-       "mse" : MSE giữa logit và one-hot của y (ghi rõ bạn lấy trung bình thế nào).
+    """"ce"  : cross-entropy trên logit thô và nhãn int64.
+       "mse" : mean squared error giữa logit và one-hot của nhãn.
     """
-    raise NotImplementedError  # TODO
+    if loss_name == "ce":
+        return F.cross_entropy(logits, y.to(dtype=torch.int64))
+    if loss_name == "mse":
+        one_hot = F.one_hot(y.to(dtype=torch.int64), num_classes=logits.shape[1])
+        return F.mse_loss(logits, one_hot.to(dtype=logits.dtype), reduction="mean")
+    raise ValueError("loss_name phải là 'ce' hoặc 'mse'.")
 
 
 def run_experiment(cfg: dict, data: dict) -> dict:
@@ -91,30 +159,236 @@ def run_experiment(cfg: dict, data: dict) -> dict:
          "best_state": state_dict của epoch có val_loss thấp nhất (giữ trong RAM để dự đoán eval)}
     (tên khoá của summary trùng tên cột trong experiments.xlsx)
 
-    Các bước:
-      0. set_seed(cfg["seed"]); tạo model = MLP(...), assert count_params(model) == EXPECTED_PARAMS[hidden]
-         chuyển model lên device; tạo optimizer = build_optimizer(...)
-         nếu precision == "fp16": scaler = torch.amp.GradScaler(...)
-      1. step0_loss = evaluate(model, X_val, y_val)["loss"]   # TRƯỚC bước cập nhật đầu tiên; kỳ vọng ≈ ln 7
-      2. for epoch in 1..epochs:
-           model.train()
-           for xb, yb in iterate_batches(X_tr, y_tr, cfg["batch"], generator):
-               with torch.autocast(...)  nếu precision != "fp32":   # chỉ bọc forward + loss
-                   logits = model(xb); loss = compute_loss(logits, yb, cfg["loss"])
-               optimizer.zero_grad(set_to_none=True)
-               backward (qua scaler nếu fp16)
-               nếu fp16 và có clip: scaler.unscale_(optimizer)  TRƯỚC khi clip
-               gn = clip_gradients(model.parameters(), cfg["clip_norm"])   # chuẩn TRƯỚC khi cắt; ghi lại
-               bước cập nhật (scaler.step(optimizer); scaler.update() nếu fp16, ngược lại optimizer.step())
-               nếu loss là NaN/inf: đặt diverged=True và dừng sớm, ĐỪNG để notebook treo
-           cuối epoch (dùng evaluate, chế độ eval):
-               train_loss trên toàn bộ train (hoặc 1 tập con CỐ ĐỊNH ~50 000 mẫu), val_loss/val_acc/val_macro_f1
-               grad_norm trung bình của epoch; thời gian epoch (torch.cuda.synchronize() nếu dùng GPU)
-               nếu val_loss tốt nhất từ trước tới giờ: lưu best_state (bản sao state_dict) và best_epoch
-      3. tổng hợp summary tại best_epoch (val_acc, val_macro_f1 lấy ở best_epoch); peak_mem_MB nếu có GPU
-    TUYỆT ĐỐI không đưa X_eval vào hàm này để chọn epoch/cấu hình. Chỉ dùng val.
+    Huấn luyện trên train, theo dõi validation sau mỗi epoch và lưu state có
+    validation loss thấp nhất. Kết quả gồm lịch sử theo epoch, các metric tốt
+    nhất trên validation, thời gian chạy, bộ nhớ GPU và trạng thái phân kỳ.
+    Tập eval không tham gia lựa chọn epoch hoặc cấu hình.
     """
-    raise NotImplementedError  # TODO
+    cfg = {**DEFAULT_CFG, **cfg}
+    cfg["hidden"] = tuple(int(width) for width in cfg["hidden"])
+    if cfg["lr"] is None or not math.isfinite(float(cfg["lr"])) or cfg["lr"] <= 0:
+        raise ValueError("Cần chọn learning rate dương bằng validation trước khi huấn luyện.")
+    if int(cfg["batch"]) <= 0 or int(cfg["epochs"]) <= 0:
+        raise ValueError("batch và epochs phải lớn hơn 0.")
+    if cfg["hidden"] not in EXPECTED_PARAMS:
+        raise ValueError(f"Kiến trúc hidden={cfg['hidden']} không có trong quy định của lab.")
+    if cfg["precision"] not in {"fp32", "fp16", "bf16"}:
+        raise ValueError("precision phải là 'fp32', 'fp16' hoặc 'bf16'.")
+
+    set_seed(int(cfg["seed"]))
+    X_tr, y_tr = data["X_tr"], data["y_tr"]
+    X_val, y_val = data["X_val"], data["y_val"]
+    device = X_tr.device
+    if cfg["precision"] == "fp16" and device.type != "cuda":
+        raise ValueError("FP16 trong lab này cần CUDA.")
+    if cfg["precision"] == "bf16" and device.type == "cuda":
+        if not torch.cuda.is_bf16_supported():
+            raise ValueError("GPU hiện tại không hỗ trợ BF16.")
+
+    model = MLP(
+        hidden=cfg["hidden"], dropout=float(cfg["dropout"]), init=cfg["init"]
+    ).to(device)
+    if count_params(model) != EXPECTED_PARAMS[cfg["hidden"]]:
+        raise AssertionError(
+            f"Số tham số sai: {count_params(model)} != {EXPECTED_PARAMS[cfg['hidden']]}"
+        )
+    optimizer = build_optimizer(
+        cfg["optimizer"],
+        model.parameters(),
+        lr=float(cfg["lr"]),
+        weight_decay=float(cfg["weight_decay"]),
+        momentum=float(cfg["momentum"]),
+        betas=tuple(cfg["betas"]),
+        eps=float(cfg["eps"]),
+    )
+
+    steps_per_epoch = math.ceil(len(X_tr) / int(cfg["batch"]))
+    scheduler = build_scheduler(
+        optimizer,
+        cfg.get("scheduler"),
+        total_steps=steps_per_epoch * int(cfg["epochs"]),
+        **cfg.get("scheduler_kwargs", {}),
+    )
+    precision_dtype = {"fp16": torch.float16, "bf16": torch.bfloat16}.get(
+        cfg["precision"]
+    )
+    use_scaler = cfg["precision"] == "fp16"
+    if use_scaler:
+        try:
+            scaler = torch.amp.GradScaler("cuda", enabled=True)
+        except (AttributeError, TypeError):
+            scaler = torch.cuda.amp.GradScaler(enabled=True)
+    else:
+        scaler = None
+
+    clip_events = 0
+    finite_gradient_steps = 0
+
+    generator = torch.Generator(device=device)
+    generator.manual_seed(int(cfg["seed"]))
+    history = {
+        "epoch": [],
+        "train_loss": [],
+        "val_loss": [],
+        "val_acc": [],
+        "val_macro_f1": [],
+        "grad_norm": [],
+        "epoch_time_s": [],
+    }
+    step0_loss = float(evaluate(model, X_val, y_val, cfg["loss"])["loss"])
+    best_val_loss = math.inf
+    best_state = None
+    best_epoch = None
+    best_train_loss = None
+    best_val_acc = None
+    best_val_macro_f1 = None
+    diverged = not math.isfinite(step0_loss)
+    final_train_loss = None
+    final_val_loss = None
+
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
+
+    for epoch in range(1, int(cfg["epochs"]) + 1):
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        epoch_start = time.perf_counter()
+        model.train()
+        grad_norms = []
+        epoch_failed = False
+
+        if not diverged:
+            for xb, yb in iterate_batches(
+                X_tr, y_tr, int(cfg["batch"]), generator=generator, shuffle=True
+            ):
+                optimizer.zero_grad(set_to_none=True)
+                if precision_dtype is None:
+                    logits = model(xb)
+                    loss = compute_loss(logits, yb, cfg["loss"])
+                else:
+                    with torch.autocast(
+                        device_type=device.type,
+                        dtype=precision_dtype,
+                        enabled=True,
+                    ):
+                        logits = model(xb)
+                        loss = compute_loss(logits, yb, cfg["loss"])
+
+                if not bool(torch.isfinite(loss).item()):
+                    diverged = True
+                    epoch_failed = True
+                    break
+
+                if scaler is not None:
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                else:
+                    loss.backward()
+
+                grad_norm = clip_gradients(model.parameters(), cfg["clip_norm"])
+                if not math.isfinite(grad_norm):
+                    if scaler is None:
+                        diverged = True
+                        epoch_failed = True
+                        optimizer.zero_grad(set_to_none=True)
+                        break
+                    grad_norms.append(grad_norm)
+                    old_scale = scaler.get_scale()
+                    scaler.step(optimizer)  # GradScaler skips this update after detecting inf/nan.
+                    scaler.update()
+                    if scheduler is not None and scaler.get_scale() >= old_scale:
+                        scheduler.step()
+                    continue
+                finite_gradient_steps += 1
+                if cfg["clip_norm"] is not None and grad_norm > float(cfg["clip_norm"]):
+                    clip_events += 1
+                grad_norms.append(grad_norm)
+
+                if scaler is not None:
+                    old_scale = scaler.get_scale()
+                    scaler.step(optimizer)
+                    scaler.update()
+                    if scheduler is not None and scaler.get_scale() >= old_scale:
+                        scheduler.step()
+                else:
+                    optimizer.step()
+                    if scheduler is not None:
+                        scheduler.step()
+
+        if epoch_failed:
+            train_loss = val_loss = val_acc = val_macro_f1 = float("nan")
+        elif not diverged:
+            train_metrics = evaluate(model, X_tr, y_tr, cfg["loss"])
+            val_metrics = evaluate(model, X_val, y_val, cfg["loss"])
+            train_loss = float(train_metrics["loss"])
+            val_loss = float(val_metrics["loss"])
+            val_acc = float(val_metrics["acc"])
+            val_macro_f1 = float(val_metrics["macro_f1"])
+            if not all(math.isfinite(value) for value in (train_loss, val_loss, val_acc, val_macro_f1)):
+                diverged = True
+                train_loss = val_loss = val_acc = val_macro_f1 = float("nan")
+        else:
+            train_loss = val_loss = val_acc = val_macro_f1 = float("nan")
+
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        epoch_time = time.perf_counter() - epoch_start
+        mean_grad_norm = float(np.mean(grad_norms)) if grad_norms else float("nan")
+        history["epoch"].append(epoch)
+        history["train_loss"].append(train_loss)
+        history["val_loss"].append(val_loss)
+        history["val_acc"].append(val_acc)
+        history["val_macro_f1"].append(val_macro_f1)
+        history["grad_norm"].append(mean_grad_norm)
+        history["epoch_time_s"].append(epoch_time)
+
+        if math.isfinite(val_loss):
+            final_train_loss = train_loss
+            final_val_loss = val_loss
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_epoch = epoch
+                best_train_loss = train_loss
+                best_val_acc = val_acc
+                best_val_macro_f1 = val_macro_f1
+                best_state = {
+                    name: tensor.detach().cpu().clone()
+                    for name, tensor in model.state_dict().items()
+                }
+
+        print(
+            f"{cfg['exp_id']} | epoch {epoch:02d}/{cfg['epochs']} "
+            f"train_loss={train_loss:.5f} val_loss={val_loss:.5f} "
+            f"val_macro_f1={val_macro_f1:.5f} grad_norm={mean_grad_norm:.5g} "
+            f"time={epoch_time:.2f}s" + (" DIVERGED" if diverged else "")
+        )
+        if diverged:
+            break
+
+    if device.type == "cuda":
+        peak_mem_mb = float(torch.cuda.max_memory_allocated(device) / (1024**2))
+    else:
+        peak_mem_mb = None
+    completed_times = [value for value in history["epoch_time_s"] if math.isfinite(value)]
+    summary = {
+        "step0_loss": step0_loss,
+        "best_val_loss": None if best_epoch is None else best_val_loss,
+        "best_epoch": best_epoch,
+        "final_train_loss": final_train_loss,
+        "final_val_loss": final_val_loss,
+        "val_acc": best_val_acc,
+        "val_macro_f1": best_val_macro_f1,
+        "time_per_epoch_s": float(np.mean(completed_times)) if completed_times else None,
+        "peak_mem_MB": peak_mem_mb,
+        "clip_events": clip_events,
+        "finite_gradient_steps": finite_gradient_steps,
+        "clip_fraction": (
+            clip_events / finite_gradient_steps if finite_gradient_steps else None
+        ),
+        "diverged": bool(diverged),
+        "best_train_loss": best_train_loss,
+    }
+    return {"cfg": cfg, "history": history, "summary": summary, "best_state": best_state}
 
 
 def write_predictions(row_id, preds, path: str) -> None:
@@ -124,16 +398,40 @@ def write_predictions(row_id, preds, path: str) -> None:
     preds  : nhãn dự đoán int64 0..6 (cùng thứ tự với row_id)
     Phải đủ mọi dòng của tập eval, mỗi row_id đúng một lần.
     """
-    raise NotImplementedError  # TODO
+    row_id = np.asarray(row_id)
+    preds = np.asarray(preds)
+    if row_id.ndim != 1 or preds.ndim != 1 or len(row_id) != len(preds):
+        raise ValueError("row_id và preds phải là hai mảng một chiều cùng độ dài.")
+    if not np.issubdtype(row_id.dtype, np.integer):
+        if not np.all(np.equal(row_id, row_id.astype(np.int64))):
+            raise ValueError("row_id phải chứa số nguyên.")
+    if not np.issubdtype(preds.dtype, np.integer):
+        if not np.all(np.equal(preds, preds.astype(np.int64))):
+            raise ValueError("pred phải chứa số nguyên.")
+    preds = preds.astype(np.int64)
+    if len(np.unique(row_id)) != len(row_id):
+        raise ValueError("row_id bị trùng.")
+    if len(preds) and ((preds < 0).any() or (preds > 6).any()):
+        raise ValueError("pred phải nằm trong khoảng 0..6.")
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(("row_id", "pred"))
+        writer.writerows(zip(row_id.astype(np.int64), preds))
 
 
 def final_eval(cfg: dict, result: dict, data: dict, pred_path: str) -> None:
-    """Dùng MỘT LẦN cho cấu hình cuối cùng (và baseline): nạp best_state, dự đoán eval, ghi predictions.
-
-    Các bước:
-      1. model = MLP(...); model.load_state_dict(result["best_state"]); lên device
-      2. preds = predict(model, data["X_eval"])  # fp32, eval mode
-      3. write_predictions(data["eval_row_id"], preds.cpu().numpy(), pred_path)
-      4. chạy `python scripts/evaluate.py --pred <pred_path>` và ghi kết quả vào bảng/báo cáo
-    """
-    raise NotImplementedError  # TODO
+    """Nạp state tốt nhất, dự đoán toàn bộ eval và ghi CSV theo định dạng evaluator."""
+    if result.get("best_state") is None:
+        raise ValueError("Lần chạy không có best_state hợp lệ; không thể tạo dự đoán eval.")
+    device = data["X_eval"].device
+    model = MLP(
+        hidden=tuple(cfg["hidden"]),
+        dropout=float(cfg["dropout"]),
+        init=cfg["init"],
+    ).to(device)
+    model.load_state_dict(result["best_state"])
+    predictions = predict(model, data["X_eval"]).detach().cpu().numpy()
+    write_predictions(data["eval_row_id"], predictions, pred_path)
+    print(f"Đã ghi {len(predictions):,} dự đoán: {pred_path}")
