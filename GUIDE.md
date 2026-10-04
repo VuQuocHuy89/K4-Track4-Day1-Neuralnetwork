@@ -112,11 +112,11 @@ Khung code: `code/data.py`.
 6. Đưa toàn bộ `X_tr, y_tr, X_val, y_val, X_eval, y_eval` lên GPU dưới dạng tensor một lần. **Không cần `DataLoader`**: tự xáo `torch.randperm(N)` mỗi epoch rồi cắt lô. Cách này nhanh hơn nhiều khi chạy nhiều cấu hình.
 
 **Tự kiểm tra Part 0:**
-- [ ] Kích thước: `train` = 464 809, `eval` = 116 203; sau khi tách val (20%) còn 371 847 mẫu train và 92 962 mẫu val.
-- [ ] Tỉ lệ lớp ở train, val, eval gần như bằng nhau.
-- [ ] Trung bình/độ lệch chuẩn của 10 cột số trên phần *train còn lại* ≈ 0 / 1.
-- [ ] In ra accuracy của chiến lược "luôn đoán lớp đa số" trên val (≈ 0,4876). Đó là mốc thấp nhất mà mô hình phải vượt.
-- [ ] Không có đoạn code nào đưa `X_eval` vào bước chuẩn hoá, chọn cấu hình hay dừng sớm.
+- [x] Kích thước: `train` = 464 809, `eval` = 116 203; sau khi tách val (20%) còn 371 847 mẫu train và 92 962 mẫu val.
+- [x] Tỉ lệ lớp ở train, val, eval gần như bằng nhau.
+- [x] Trung bình/độ lệch chuẩn của 10 cột số trên phần *train còn lại* ≈ 0 / 1.
+- [x] In ra accuracy của chiến lược "luôn đoán lớp đa số" trên val (≈ 0,4876). Đó là mốc thấp nhất mà mô hình phải vượt.
+- [x] Không có đoạn code nào đưa `X_eval` vào bước chuẩn hoá, chọn cấu hình hay dừng sớm.
 
 ---
 
@@ -145,10 +145,10 @@ Class `MLP(nn.Module)` nhận `hidden` (danh sách số nơ-ron lớp ẩn, ví 
 Sau một lần `loss.backward()`, in chuẩn gradient của từng tham số (`W1,b1,W2,b2,W3,b3`). Tất cả phải khác `None` và khác 0. Đây là cách phát hiện sớm "gradient không chảy" (slide, Chương 5).
 
 **Tự kiểm tra Part 1:**
-- [ ] Số tham số khớp bảng; logits có shape `(B,7)`.
-- [ ] Loss bước 0 ≈ 1,946.
-- [ ] Quá khớp 20 mẫu: loss → gần 0.
-- [ ] Mọi tham số có gradient khác 0 sau `backward()`.
+- [x] Số tham số khớp bảng; logits có shape `(B,7)`.
+- [x] Loss bước 0 ≈ 1,946.
+- [x] Quá khớp 20 mẫu: loss → gần 0.
+- [x] Mọi tham số có gradient khác 0 sau `backward()`.
 
 ---
 
@@ -189,10 +189,10 @@ Tìm `lr` cho baseline: chạy nhanh vài giá trị (ví dụ quanh 0,01 → 0,
 **Khuyến khích mạnh:** chạy baseline với 2–3 seed khác nhau để đo **độ nhiễu**: dao động giữa các seed của val loss / accuracy / macro-F1. Chênh lệch giữa hai cấu hình nhỏ hơn ~2 lần độ lệch chuẩn này thì không phải là bằng chứng. Nếu bạn chỉ chạy một seed, hãy nêu rõ đó là hạn chế trong báo cáo.
 
 **Tự kiểm tra Part 2:**
-- [ ] Loss bước 0 baseline ≈ 1,946.
-- [ ] Val accuracy cuối > 48,8% (mốc "đoán đa số"). Nếu không, có lỗi.
-- [ ] Đường train/val loss trông bình thường; bạn mô tả được hình dạng (còn giảm? bắt đầu quá khớp?).
-- [ ] Có file `results/*.json` và ảnh cho baseline.
+- [x] Loss bước 0 baseline ≈ 1,946.
+- [x] Val accuracy cuối > 48,8% (mốc "đoán đa số"). Nếu không, có lỗi.
+- [x] Đường train/val loss trông bình thường; bạn mô tả được hình dạng (còn giảm? bắt đầu quá khớp?).
+- [x] Có file `results/*.json` và ảnh cho baseline.
 
 ---
 
@@ -271,9 +271,9 @@ Công thức (slide): `g ← g · min(1, c/‖g‖)` với `‖g‖` là chuẩn
 Nếu bạn muốn, kết hợp các kỹ thuật thấy có ích (chọn **theo val**) thành một cấu hình cuối cùng và chạy với 2–3 seed. Việc chấm điểm trên tập **eval** (cho baseline và cấu hình cuối cùng) làm ở Part 4. Mục *Cải thiện so với baseline của chính bạn* trong RUBRIC xét hai cấu hình này.
 
 **Tự kiểm tra Part 3:**
-- [ ] Mỗi thí nghiệm đã chạy có ảnh riêng, có dòng trong bảng, có dự đoán trước và đối chiếu sau.
-- [ ] Mỗi thí nghiệm chỉ đổi một yếu tố (hoặc bạn đã ghi rõ trong `notes`).
-- [ ] Mọi kết luận "tốt hơn / tệ hơn" được so với độ nhiễu seed (cột "vượt nhiễu?" trong bảng mẫu), hoặc bạn nêu rõ vì sao chưa kết luận được.
+- [x] Mỗi thí nghiệm đã chạy có ảnh riêng, có dòng trong bảng, có dự đoán trước và đối chiếu sau.
+- [x] Mỗi thí nghiệm chỉ đổi một yếu tố (hoặc bạn đã ghi rõ trong `notes`).
+- [x] Mọi kết luận "tốt hơn / tệ hơn" được so với độ nhiễu seed (cột "vượt nhiễu?" trong bảng mẫu), hoặc bạn nêu rõ vì sao chưa kết luận được.
 
 ---
 
@@ -314,12 +314,12 @@ Không chấp nhận: "Adam tốt hơn." (không có số, không so với nhi�
 - Cấu trúc thư mục nộp đúng như README, mục 6 (danh sách chi tiết từng file). **Mọi code nằm trong `code/`.**
 
 **Tự kiểm tra Part 4:**
-- [ ] `experiments.xlsx` mở được, không có ô công thức lỗi, các dòng đã điền đủ cột (hoặc ghi lý do thiếu ở `notes`).
-- [ ] Số ảnh `figures/<exp_id>.png` = số dòng trong bảng.
-- [ ] Báo cáo trả lời các câu hỏi dẫn dắt cho những chủ đề bạn đã thử.
-- [ ] `predictions_eval.csv` qua được `scripts/evaluate.py`; `eval_result.json` có trong thư mục nộp; điểm trong bảng và báo cáo khớp `eval_result.json`.
-- [ ] Điểm eval chỉ xuất hiện ở baseline và cấu hình cuối cùng.
-- [ ] Không còn `NotImplementedError` trong `code/`.
+- [x] `experiments.xlsx` mở được, không có ô công thức lỗi, các dòng đã điền đủ cột (hoặc ghi lý do thiếu ở `notes`).
+- [x] Số ảnh `figures/<exp_id>.png` = số dòng trong bảng.
+- [x] Báo cáo trả lời các câu hỏi dẫn dắt cho những chủ đề bạn đã thử.
+- [x] `predictions_eval.csv` qua được `scripts/evaluate.py`; `eval_result.json` có trong thư mục nộp; điểm trong bảng và báo cáo khớp `eval_result.json`.
+- [x] Điểm eval chỉ xuất hiện ở baseline và cấu hình cuối cùng.
+- [x] Không còn `NotImplementedError` trong `code/`.
 
 ---
 

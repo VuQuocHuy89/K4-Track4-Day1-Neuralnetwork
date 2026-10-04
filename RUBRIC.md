@@ -130,13 +130,13 @@ Các mức được hiệu chỉnh từ vài lần chạy tham chiếu của gi�
 
 ## Checklist tự chấm trước khi nộp
 
-- [ ] Model đúng shape, `assert` 47 879 tham số
-- [ ] Loss bước 0 ≈ 1,946 và quá khớp được 20 mẫu
-- [ ] Mỗi thí nghiệm: 1 dòng bảng + 1 ảnh + dự đoán trước + đối chiếu sau
-- [ ] Số ảnh = số dòng trong bảng
-- [ ] Chọn cấu hình chỉ bằng val; chạy `scripts/evaluate.py` đúng một lần cho cấu hình cuối cùng
-- [ ] `predictions_eval.csv` hợp lệ; `eval_result.json` khớp bảng và báo cáo
-- [ ] Có phân tích lỗi theo lớp (bảng F1 từng lớp + ma trận nhầm lẫn)
-- [ ] Báo cáo: mỗi câu "A hơn B" có số, ảnh, cơ chế và nhắc nhiễu seed
-- [ ] Notebook chạy lại từ đầu không lỗi; không còn `NotImplementedError`
-- [ ] Đủ file theo README mục 6.2; code nằm hết trong `code/`; không có dữ liệu, `.pt`, `__pycache__`
+- [x] Model đúng shape, `assert` 47 879 tham số
+- [x] Loss bước 0 ≈ 1,946 và quá khớp được 20 mẫu
+- [x] Mỗi thí nghiệm: 1 dòng bảng + 1 ảnh + dự đoán trước + đối chiếu sau
+- [x] Số ảnh = số dòng trong bảng
+- [x] Chọn cấu hình chỉ bằng val; chạy `scripts/evaluate.py` đúng một lần cho cấu hình cuối cùng
+- [x] `predictions_eval.csv` hợp lệ; `eval_result.json` khớp bảng và báo cáo
+- [x] Có phân tích lỗi theo lớp (bảng F1 từng lớp + ma trận nhầm lẫn)
+- [x] Báo cáo: mỗi câu "A hơn B" có số, ảnh, cơ chế và nhắc nhiễu seed
+- [x] Notebook chạy lại từ đầu không lỗi; không còn `NotImplementedError`
+- [x] Đủ file theo README mục 6.2; code nằm hết trong `code/`; không có dữ liệu, `.pt`, `__pycache__`

@@ -133,12 +133,12 @@ submission_<MSSV>/
 
 ### 6.4 Kiểm tra nhanh trước khi nộp
 
-- [ ] Tên thư mục là `submission_<MSSV>` và có đủ `REPORT.md`, `experiments.xlsx`, `predictions_eval.csv`, `eval_result.json`, `figures/`, `code/lab.ipynb`.
-- [ ] `python scripts/evaluate.py --pred submission_<MSSV>/predictions_eval.csv` chạy thành công; số khớp `eval_result.json`, bảng và báo cáo.
-- [ ] Số ảnh `figures/<exp_id>.png` bằng số dòng thí nghiệm trong `experiments.xlsx`, và tên ảnh trùng `exp_id`.
-- [ ] Mọi file `.py` và notebook đều nằm trong `code/`; không còn `NotImplementedError`.
-- [ ] Mở `code/lab.ipynb` trên Colab/Kaggle, chọn *Restart & Run All* không lỗi, output còn nguyên.
-- [ ] Mọi con số trong `REPORT.md` tìm lại được trong `experiments.xlsx`.
+- [x] Tên thư mục là `submission_<MSSV>` và có đủ `REPORT.md`, `experiments.xlsx`, `predictions_eval.csv`, `eval_result.json`, `figures/`, `code/lab.ipynb`.
+- [x] `python scripts/evaluate.py --pred submission_<MSSV>/predictions_eval.csv` chạy thành công; số khớp `eval_result.json`, bảng và báo cáo.
+- [x] Số ảnh `figures/<exp_id>.png` bằng số dòng thí nghiệm trong `experiments.xlsx`, và tên ảnh trùng `exp_id`.
+- [x] Mọi file `.py` và notebook đều nằm trong `code/`; không còn `NotImplementedError`.
+- [x] Mở `code/lab.ipynb` trên Colab/Kaggle, chọn *Restart & Run All* không lỗi, output còn nguyên.
+- [x] Mọi con số trong `REPORT.md` tìm lại được trong `experiments.xlsx`.
 
 ## 7. Cách đánh giá
 
